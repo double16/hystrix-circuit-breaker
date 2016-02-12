@@ -1,10 +1,12 @@
-import com.neidetcher.hcbp.HystrixService
 import com.netflix.config.ConfigurationManager
+import com.netflix.turbine.init.TurbineInit
+import com.neidetcher.hcbp.HystrixService
+import com.neidetcher.hcbp.util.HystrixConfigurationUtility
 import com.netflix.hystrix.HystrixCommand
 
 class HystrixCircuitBreakerGrailsPlugin {
-    def version = "0.2"
-    def grailsVersion = "2.0 > *"
+    def version = "0.6"
+    def grailsVersion = "2.3 > *"
     def pluginExcludes = [
         "grails-app/controllers/hystrix/circuit/breaker/TestController.groovy"
     ]
@@ -14,7 +16,8 @@ class HystrixCircuitBreakerGrailsPlugin {
 
     def license = "APACHE"
     def developers = [
-        [name: 'Demian Neidetcher', email: 'demian0311@gmail.com']
+        [name: 'Demian Neidetcher', email: 'demian0311@gmail.com'],
+        [name: 'Christian Oestreich', email: 'acetrike@gmail.com']
     ]
     def issueManagement = [system: 'GITHUB', url: 'https://github.com/demian0311/hystrix-circuit-breaker/issues']
     def scm = [url: 'https://github.com/demian0311/hystrix-circuit-breaker']
@@ -35,30 +38,41 @@ class HystrixCircuitBreakerGrailsPlugin {
                 'url-pattern'("/hystrix.stream")
             }
         }
-    }
-	
-    private void configureHystrix(def application) {
-        def hystrixConfig = application.config.hystrix
-        if (hystrixConfig) {
-            def hystrixConfigProperties = hystrixConfig.toProperties('hystrix')
-            // throws NPE: ConfigurationManager.loadProperties(hystrixConfigProperties)
-            def config = ConfigurationManager.getConfigInstance()
-            hystrixConfigProperties.each { key, value ->
-                config.setProperty(key, value)
-            }
-        }
+		
+		if (application.config.turbine) {
+			lastMapping + {
+				'servlet' {
+					'servlet-name'("TurbineStreamServlet")
+					'display-name'("TurbineStreamServlet")
+					'servlet-class'("com.netflix.turbine.streaming.servlet.TurbineStreamServlet")
+					'description'("")
+				}
+				'servlet-mapping' {
+					'servlet-name'("TurbineStreamServlet")
+					'url-pattern'("/turbine.stream")
+				}
+			}
+			
+			def listeners = xml.'listener'
+			def lastListener = listeners[listeners.size() - 1]
+			lastListener + {
+				'listener' {
+					'listener-class'('hystrix.circuit.breaker.TurbineContextListener')
+				}
+			}
+		}
     }
 
 	def doWithDynamicMethods = { ctx ->
 		addHystrixMethods(application, log)
 	}
 	
-    def doWithApplicationContext = { applicationContext -> 
-		configureHystrix(application) 
-	}
-	
 	def onChange = { event ->
 		addHystrixMethods(event.application, log)
+	}
+	
+    def doWithApplicationContext = { applicationContext -> 
+		HystrixConfigurationUtility.configureHystrix(application, ConfigurationManager.getConfigInstance()) 
 	}
 	
 	private void addHystrixMethods(application, log) {
